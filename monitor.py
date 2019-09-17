@@ -133,20 +133,23 @@ p.add_argument('--info')
 p.add_argument('--proc')
 p.add_argument('--thread')
 p.add_argument('--interval', default=2, type=int)
+p.add_argument('--append', action='store_true')
 
 args = p.parse_args()
 #print(ProcessRecord._fields)
 
-with open(args.info, 'w') as finfo, \
-    open(args.proc, 'w') as fproc, \
-    open(args.thread, 'w') as fthread:
+mode = 'a' if args.append else 'w'
+with open(args.info, mode) as finfo, \
+    open(args.proc, mode) as fproc, \
+    open(args.thread, mode) as fthread:
     info_writer = csv.DictWriter(finfo, ProcessRecord._fields, delimiter='\t')
     pproc_writer = csv.DictWriter(fproc, PerformanceRecord._fields, delimiter='\t')
     tproc_writer = csv.DictWriter(fthread, PerformanceThreadRecord._fields, delimiter='\t')
 
-    info_writer.writeheader()
-    pproc_writer.writeheader()
-    tproc_writer.writeheader()
+    if not args.append:
+        info_writer.writeheader()
+        pproc_writer.writeheader()
+        tproc_writer.writeheader()
     
     m = Monitor(".*MaxQuantTask.*", info_writer, pproc_writer, tproc_writer)
     
@@ -154,8 +157,11 @@ with open(args.info, 'w') as finfo, \
         try:
             m.monitor()
             time.sleep(args.interval)
-        except:
+        except KeyboardInterrupt:
             break
+        except Exception as ex:
+            print(ex)
+        
         
 
 
