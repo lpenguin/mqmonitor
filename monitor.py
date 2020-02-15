@@ -8,10 +8,13 @@ import csv
 _timer = getattr(time, 'monotonic', time.time)
 
 
+
 class ProcessRecord(NamedTuple):
     time: float
     pid: int
     parent_pid: int
+    upid: int
+    parent_upid: int
     name: str
     args: List[str]
     create_time: float
@@ -23,6 +26,7 @@ class ProcessRecord(NamedTuple):
 class PerformanceRecord(NamedTuple):
     time: float
     pid: int
+    upid: int
     cpu_percent: float
     memory_rss: int
     num_mmaps: int
@@ -32,6 +36,7 @@ class PerformanceRecord(NamedTuple):
 class PerformanceThreadRecord(NamedTuple):
     time: float
     pid: int
+    upid: int
     tid: int
     name: str
     cpu_percent: float
@@ -47,6 +52,8 @@ class Monitor:
         self._pinfo_writer = pinfo_writer
         self._pperf_writer = pperf_writer
         self._tperf_writer = tperf_writer
+        self._upid_counter = 0
+        self._pid2upid = {}
 
     def timer(self):
         return _timer() * self._num_cpus
@@ -64,9 +71,16 @@ class Monitor:
             pid = p.info['pid']
             current.add(pid)
             if pid not in self._current_processes:
+                self._upid_counter += 1
+                upid = self._upid_counter
+                self._pid2upid[pid] = upid
+                parent_upid = self._pid2upid.get(p.info['ppid'])
+                
                 pr = ProcessRecord(
                     pid=pid,
+                    upid=upid,
                     parent_pid=p.info['ppid'],
+                    parent_upid=parent_upid,
                     name=p.info['name'],
                     args=p.info['cmdline'],
                     create_time=p.info['create_time'],
@@ -83,6 +97,7 @@ class Monitor:
         to_delete = set(self._current_processes.keys()) - current
         for pid in to_delete:
             del self._current_processes[pid]
+            del self._pid2upid[pid]
 
 
         for pr in self._current_processes.values():
@@ -99,6 +114,7 @@ class Monitor:
                 # print(th)
                 perf_record = PerformanceRecord(
                     pid=pr.pid,
+                    upid=self._pid2upid.get(pr.pid),
                     cpu_percent=cpu_percent,
                     memory_rss=memory_rss,
                     num_mmaps=num_mmaps,
@@ -121,8 +137,8 @@ class Monitor:
                     cpu_percent = round(cpu_percent, 1)
                     
                     pr.last_thread_proc_times[t.id] = total_time
-
-                    tr = PerformanceThreadRecord(pid=pr.pid, tid=t.id, name=t.name, cpu_percent=cpu_percent, time=time.time(),)
+                    upid = self._pid2upid.get(pr.pid)
+                    tr = PerformanceThreadRecord(pid=pr.pid, upid=upid, tid=t.id, name=t.name, cpu_percent=cpu_percent, time=time.time(),)
                     self._tperf_writer.writerow(tr._asdict())
                 self._pperf_writer.writerow(perf_record._asdict())
                 # print(perf_record)
