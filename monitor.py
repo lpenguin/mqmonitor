@@ -8,6 +8,17 @@ import csv
 _timer = getattr(time, 'monotonic', time.time)
 
 
+class SystemUsageRecord(NamedTuple):
+    time: float
+    cpu: float
+    cpu_user: float
+    cpu_system: float
+    cpu_idle: float
+    cpu_iowait: float
+    cpu_count: int
+    mem_total: float
+    mem_available: float
+    mem_used: float
 
 class ProcessRecord(NamedTuple):
     time: float
@@ -45,13 +56,14 @@ class PerformanceThreadRecord(NamedTuple):
 class Monitor:    
     _current_processes: Dict[int, ProcessRecord]
 
-    def __init__(self, search_regex: str, pinfo_writer, pperf_writer, tperf_writer):
+    def __init__(self, search_regex: str, pinfo_writer, pperf_writer, tperf_writer, system_writer):
         self._current_processes = dict()
         self._search_regex = re.compile(search_regex)
         self._num_cpus = psutil.cpu_count()
         self._pinfo_writer = pinfo_writer
         self._pperf_writer = pperf_writer
         self._tperf_writer = tperf_writer
+        self._system_writer = system_writer
         self._upid_counter = 0
         self._pid2upid = {}
 
