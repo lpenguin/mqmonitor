@@ -1,3 +1,6 @@
+import os
+from os import path
+
 import psutil
 from typing import NamedTuple, List, Dict, Set, Tuple
 import re
@@ -6,7 +9,6 @@ import time
 import csv
 
 _timer = getattr(time, 'monotonic', time.time)
-
 
 class SystemUsageRecord(NamedTuple):
     time: float
@@ -19,6 +21,7 @@ class SystemUsageRecord(NamedTuple):
     mem_total: float
     mem_available: float
     mem_used: float
+
 
 class ProcessRecord(NamedTuple):
     time: float
@@ -71,6 +74,8 @@ class Monitor:
         return _timer() * self._num_cpus
          
     def monitor(self):
+        self._write_system_stats()
+
         # Update Processes
         current: Set[int] = set()
 
@@ -156,30 +161,62 @@ class Monitor:
                 # print(perf_record)
                 pr.last_sys_time[0] = sys_time
 
+    def _write_system_stats(self):
+        cpu_percent = psutil.cpu_percent()
+        cpu_count = psutil.cpu_count()
+
+        cpu_times_percent = psutil.cpu_times_percent()
+        virtual_memory = psutil.virtual_memory()
+        sys_record = SystemUsageRecord(
+            time=time.time(),
+            cpu=cpu_percent,
+            cpu_count=cpu_count,
+            cpu_system=cpu_times_percent.system,
+            cpu_user=cpu_times_percent.user,
+            cpu_idle=cpu_times_percent.idle,
+            cpu_iowait=getattr(cpu_times_percent, 'iowait', None),
+            mem_total=virtual_memory.total,
+            mem_used=virtual_memory.used,
+            mem_available=virtual_memory.available,
+        )
+
+        self._system_writer.writerow(sys_record._asdict())
+
+
 p = argparse.ArgumentParser()
-p.add_argument('--info')
-p.add_argument('--proc')
-p.add_argument('--thread')
+p.add_argument('-o', '--output', required=True)
+p.add_argument('-r', '--pattern', required=True)
 p.add_argument('--interval', default=2, type=int)
 p.add_argument('--append', action='store_true')
 
 args = p.parse_args()
-#print(ProcessRecord._fields)
 
 mode = 'a' if args.append else 'w'
-with open(args.info, mode) as finfo, \
-    open(args.proc, mode) as fproc, \
-    open(args.thread, mode) as fthread:
+
+os.makedirs(args.output, exist_ok=True)
+
+info_file = path.join(args.output, 'info.txt')
+proc_file = path.join(args.output, 'proc.txt')
+thread_file = path.join(args.output, 'thread.txt')
+system_file = path.join(args.output, 'system.txt')
+
+
+with open(info_file, mode) as finfo, \
+    open(proc_file, mode) as fproc, \
+    open(thread_file, mode) as fthread, \
+    open(system_file, mode) as fsystem:
     info_writer = csv.DictWriter(finfo, ProcessRecord._fields, delimiter='\t')
     pproc_writer = csv.DictWriter(fproc, PerformanceRecord._fields, delimiter='\t')
     tproc_writer = csv.DictWriter(fthread, PerformanceThreadRecord._fields, delimiter='\t')
+    system_writer = csv.DictWriter(fsystem, SystemUsageRecord._fields, delimiter='\t')
 
     if not args.append:
         info_writer.writeheader()
         pproc_writer.writeheader()
         tproc_writer.writeheader()
-    
-    m = Monitor(".*MaxQuantTask.*", info_writer, pproc_writer, tproc_writer)
+        system_writer.writeheader()
+
+    m = Monitor(args.pattern, info_writer, pproc_writer, tproc_writer, system_writer)
     
     while True:
         try:
